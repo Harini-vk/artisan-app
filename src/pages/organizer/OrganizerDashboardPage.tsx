@@ -1,10 +1,13 @@
-import { useState } from "react";
-import { organizerEvents, eventCategories, type OrganizerEvent } from "@/data/organizerData";
+import { useState, useEffect } from "react";
+import { eventCategories, type OrganizerEvent } from "@/data/organizerData";
 import { Plus, Edit2, Trash2, ToggleLeft, ToggleRight, Users, FileText, Calendar, MapPin } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function OrganizerDashboardPage() {
-  const [events, setEvents] = useState<OrganizerEvent[]>(organizerEvents);
+  const { user } = useAuth();
+  const [events, setEvents] = useState<OrganizerEvent[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -15,30 +18,82 @@ export default function OrganizerDashboardPage() {
   const [formDescription, setFormDescription] = useState("");
   const [formLocation, setFormLocation] = useState("");
 
+  useEffect(() => {
+    if (user?.id) fetchEvents();
+  }, [user?.id]);
+
+  const fetchEvents = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("events")
+      .select("*")
+      .eq("organizer_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (data) {
+      const mapped: OrganizerEvent[] = data.map((e) => ({
+        id: e.id,
+        name: e.name,
+        category: e.event_type,
+        date: e.event_date,
+        description: e.description,
+        location: e.location,
+        active: true, // we don't have active in DB yet, pretend true
+        invitedEntrepreneurs: [], // missing real join
+        applications: []
+      }));
+      setEvents(mapped);
+    }
+  };
+
   const resetForm = () => {
     setFormName(""); setFormCategory(""); setFormDate(""); setFormDescription(""); setFormLocation("");
     setShowCreate(false); setEditingId(null);
   };
 
-  const handleCreate = () => {
-    if (!formName || !formCategory || !formDate) {
+  const handleCreate = async () => {
+    if (!formName || !formCategory || !formDate || !user) {
       toast({ title: "Missing fields", description: "Please fill in all required fields.", variant: "destructive" });
       return;
     }
-    const newEvent: OrganizerEvent = {
-      id: `oe${Date.now()}`, name: formName, category: formCategory, date: formDate,
-      description: formDescription, location: formLocation, active: true,
-      invitedEntrepreneurs: [], applications: [],
-    };
-    setEvents([newEvent, ...events]);
-    toast({ title: "Event Created", description: `${formName} has been created. AI matching will recommend it to relevant entrepreneurs.` });
-    resetForm();
+
+    const { error } = await supabase.from("events").insert({
+      organizer_id: user.id,
+      name: formName,
+      event_type: formCategory,
+      event_date: formDate,
+      event_time: "10:00:00", // default time
+      description: formDescription,
+      location: formLocation,
+      industry_focus: formCategory
+    });
+
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Event Created", description: `${formName} has been created.` });
+      fetchEvents();
+      resetForm();
+    }
   };
 
-  const handleUpdate = () => {
-    setEvents(events.map((e) => e.id === editingId ? { ...e, name: formName, category: formCategory, date: formDate, description: formDescription, location: formLocation } : e));
-    toast({ title: "Event Updated", description: "Event details have been saved." });
-    resetForm();
+  const handleUpdate = async () => {
+    if (!editingId) return;
+    const { error } = await supabase.from("events").update({
+      name: formName,
+      event_type: formCategory,
+      event_date: formDate,
+      description: formDescription,
+      location: formLocation,
+    }).eq("id", editingId);
+
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Event Updated", description: "Event details have been saved." });
+      fetchEvents();
+      resetForm();
+    }
   };
 
   const startEdit = (event: OrganizerEvent) => {
@@ -52,9 +107,12 @@ export default function OrganizerDashboardPage() {
     setEvents(events.map((e) => e.id === id ? { ...e, active: !e.active } : e));
   };
 
-  const deleteEvent = (id: string) => {
-    setEvents(events.filter((e) => e.id !== id));
-    toast({ title: "Event Deleted" });
+  const deleteEvent = async (id: string) => {
+    const { error } = await supabase.from("events").delete().eq("id", id);
+    if (!error) {
+      setEvents(events.filter((e) => e.id !== id));
+      toast({ title: "Event Deleted" });
+    }
   };
 
   return (
@@ -81,9 +139,9 @@ export default function OrganizerDashboardPage() {
             <option value="">Select category *</option>
             {eventCategories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
-          <input value={formDate} onChange={(e) => setFormDate(e.target.value)} placeholder="Event date *"
+          <input type="date" value={formDate} onChange={(e) => setFormDate(e.target.value)}
             className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
-          <input value={formLocation} onChange={(e) => setFormLocation(e.target.value)} placeholder="Location"
+          <input value={formLocation} onChange={(e) => setFormLocation(e.target.value)} placeholder="e.g. Chennai, India"
             className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
           <textarea value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Description" rows={3}
             className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none" />

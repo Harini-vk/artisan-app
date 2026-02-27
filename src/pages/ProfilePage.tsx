@@ -1,25 +1,60 @@
-import { useState } from "react";
-import { User, Briefcase, Tag, Star, ChevronRight, Edit2, Save } from "lucide-react";
+import { useState, useEffect } from "react";
+import { User, Briefcase, Tag, Save, Edit2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-
-const initialProfile = {
-  name: "Priya Sharma",
-  email: "priya@artisan.com",
-  phone: "+91 98765 43210",
-  businessType: "Handmade Pottery & Ceramics",
-  experience: "3-5 years",
-  interests: ["Pottery", "Ceramics", "Natural Dyes"],
-  categories: ["Home Decor", "Kitchenware", "Art"],
-};
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 
 export default function ProfilePage() {
-  const [profile, setProfile] = useState(initialProfile);
+  const { user, completeOnboarding } = useAuth();
+
+  const [profile, setProfile] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    businessType: "",
+    experience: "",
+    interests: [] as string[],
+    categories: [] as string[],
+  });
+
   const [editing, setEditing] = useState(false);
 
-  const handleSave = () => {
-    setEditing(false);
-    toast({ title: "Profile Updated", description: "Your profile has been saved successfully." });
+  useEffect(() => {
+    if (user) {
+      setProfile({
+        name: user.name || "",
+        email: user.email || "",
+        phone: user.profile?.phone || "",
+        businessType: user.profile?.businessType || "",
+        experience: user.profile?.experience || "",
+        interests: user.profile?.interests || [],
+        categories: user.profile?.categories || [],
+      });
+    }
+  }, [user]);
+
+  const handleSave = async () => {
+    if (!user) return;
+
+    // Save profile data to Supabase (using completeOnboarding since it updates the profiles table)
+    const res = await completeOnboarding({
+      ...user.profile,
+      phone: profile.phone,
+      businessType: profile.businessType,
+      experience: profile.experience,
+      interests: profile.interests,
+      categories: profile.categories
+    });
+
+    if (res.success) {
+      setEditing(false);
+      toast({ title: "Profile Updated", description: "Your profile has been saved successfully." });
+    } else {
+      toast({ title: "Error", description: res.error || "Failed to update profile", variant: "destructive" });
+    }
   };
+
+  if (!user) return <div className="p-8 text-center">Loading profile...</div>;
 
   return (
     <div className="px-4 py-5 space-y-5 animate-fade-in">
@@ -30,7 +65,7 @@ export default function ProfilePage() {
         </div>
         <div>
           <h2 className="font-heading text-xl font-bold text-foreground">{profile.name}</h2>
-          <p className="text-sm text-muted-foreground">{profile.businessType}</p>
+          <p className="text-sm text-muted-foreground">{profile.businessType || "No business type set"}</p>
         </div>
         <button
           onClick={() => (editing ? handleSave() : setEditing(true))}
@@ -48,20 +83,20 @@ export default function ProfilePage() {
         </h3>
         <div className="space-y-3">
           {[
-            { label: "Full Name", value: profile.name, key: "name" },
-            { label: "Email", value: profile.email, key: "email" },
-            { label: "Phone", value: profile.phone, key: "phone" },
+            { label: "Full Name", value: profile.name, key: "name", editable: false },
+            { label: "Email", value: profile.email, key: "email", editable: false },
+            { label: "Phone", value: profile.phone, key: "phone", editable: true },
           ].map((field) => (
             <div key={field.key}>
               <label className="text-xs text-muted-foreground font-medium">{field.label}</label>
-              {editing ? (
+              {editing && field.editable ? (
                 <input
                   value={field.value}
                   onChange={(e) => setProfile((p) => ({ ...p, [field.key]: e.target.value }))}
                   className="w-full mt-1 px-3 py-2 rounded-lg bg-background border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               ) : (
-                <p className="text-sm text-foreground mt-0.5">{field.value}</p>
+                <p className="text-sm text-foreground mt-0.5">{field.value || "-"}</p>
               )}
             </div>
           ))}
@@ -83,12 +118,27 @@ export default function ProfilePage() {
                 className="w-full mt-1 px-3 py-2 rounded-lg bg-background border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
             ) : (
-              <p className="text-sm text-foreground mt-0.5">{profile.businessType}</p>
+              <p className="text-sm text-foreground mt-0.5">{profile.businessType || "-"}</p>
             )}
           </div>
           <div>
             <label className="text-xs text-muted-foreground font-medium">Experience</label>
-            <p className="text-sm text-foreground mt-0.5">{profile.experience}</p>
+            {editing ? (
+              <select
+                value={profile.experience}
+                onChange={(e) => setProfile((p) => ({ ...p, experience: e.target.value }))}
+                className="w-full mt-1 px-3 py-2 rounded-lg bg-background border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Select experience</option>
+                <option value="< 1 year">Less than 1 year</option>
+                <option value="1-3 years">1-3 years</option>
+                <option value="3-5 years">3-5 years</option>
+                <option value="5-10 years">5-10 years</option>
+                <option value="10+ years">10+ years</option>
+              </select>
+            ) : (
+              <p className="text-sm text-foreground mt-0.5">{profile.experience || "-"}</p>
+            )}
           </div>
         </div>
       </div>
@@ -100,23 +150,77 @@ export default function ProfilePage() {
         </h3>
         <div>
           <label className="text-xs text-muted-foreground font-medium">Product Interests</label>
-          <div className="flex flex-wrap gap-2 mt-2">
-            {profile.interests.map((i) => (
-              <span key={i} className="text-xs font-medium bg-primary/10 text-primary px-3 py-1.5 rounded-full">
-                {i}
-              </span>
-            ))}
-          </div>
+          {editing ? (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {["Pottery", "Ceramics", "Textiles", "Jewelry", "Food Products", "Beauty & Wellness", "Art & Decor", "Woodcraft", "Leather", "Natural Dyes"].map((interest) => (
+                <button
+                  key={interest}
+                  type="button"
+                  onClick={() => {
+                    setProfile((p) => ({
+                      ...p,
+                      interests: p.interests.includes(interest)
+                        ? p.interests.filter((i) => i !== interest)
+                        : [...p.interests, interest],
+                    }));
+                  }}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${profile.interests.includes(interest)
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-accent"
+                    }`}
+                >
+                  {interest}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {profile.interests.length > 0 ? profile.interests.map((i) => (
+                <span key={i} className="text-xs font-medium bg-primary/10 text-primary px-3 py-1.5 rounded-full">
+                  {i}
+                </span>
+              )) : (
+                <p className="text-sm text-muted-foreground">No interests selected</p>
+              )}
+            </div>
+          )}
         </div>
         <div>
           <label className="text-xs text-muted-foreground font-medium">Product Categories</label>
-          <div className="flex flex-wrap gap-2 mt-2">
-            {profile.categories.map((c) => (
-              <span key={c} className="text-xs font-medium bg-accent text-accent-foreground px-3 py-1.5 rounded-full">
-                {c}
-              </span>
-            ))}
-          </div>
+          {editing ? (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {["Pottery", "Textiles", "Jewelry", "Food Products", "Beauty & Wellness", "Art & Decor", "Woodcraft", "Leather", "Baskets", "Macrame", "Other"].map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => {
+                    setProfile((p) => ({
+                      ...p,
+                      categories: p.categories.includes(cat)
+                        ? p.categories.filter((c) => c !== cat)
+                        : [...p.categories, cat],
+                    }));
+                  }}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${profile.categories.includes(cat)
+                      ? "bg-accent text-accent-foreground ring-1 ring-primary"
+                      : "bg-muted text-muted-foreground hover:bg-accent"
+                    }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2 mt-2">
+              {profile.categories.length > 0 ? profile.categories.map((c) => (
+                <span key={c} className="text-xs font-medium bg-accent text-accent-foreground px-3 py-1.5 rounded-full">
+                  {c}
+                </span>
+              )) : (
+                <p className="text-sm text-muted-foreground">No categories selected</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

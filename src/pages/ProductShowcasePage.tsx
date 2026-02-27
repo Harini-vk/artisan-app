@@ -1,27 +1,87 @@
-import { useState } from "react";
-import { sampleProducts } from "@/data/mockData";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import type { Product } from "@/data/mockData";
-import { Plus, Camera } from "lucide-react";
+import { Plus, Camera, Package } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 
 export default function ProductShowcasePage() {
-  const [products, setProducts] = useState<Product[]>(sampleProducts);
+  const { user } = useAuth();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [newProduct, setNewProduct] = useState({ name: "", description: "", price: "", category: "" });
+  const [newProduct, setNewProduct] = useState({ name: "", description: "", price: "", category: "", image: "" });
 
-  const handleAdd = () => {
-    if (!newProduct.name || !newProduct.price) return;
-    const product: Product = {
-      id: Date.now().toString(),
-      ...newProduct,
-      image: sampleProducts[0].image,
-    };
-    setProducts((prev) => [product, ...prev]);
+  // Fetch products from Supabase
+  useEffect(() => {
+    async function fetchProducts() {
+      if (!user) return;
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .eq("entrepreneur_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (data) {
+        const mapped: Product[] = data.map((p) => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          price: p.price,
+          image: p.image || "",
+          category: p.category,
+        }));
+        setProducts(mapped);
+      }
+      if (error) console.error("Error fetching products:", error);
+      setLoading(false);
+    }
+    fetchProducts();
+  }, [user]);
+
+  const handleAdd = async () => {
+    if (!newProduct.name || !newProduct.price || !user) return;
+
+    const { data, error } = await supabase
+      .from("products")
+      .insert({
+        entrepreneur_id: user.id,
+        name: newProduct.name,
+        description: newProduct.description,
+        price: newProduct.price,
+        category: newProduct.category,
+        image: newProduct.image || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    if (data) {
+      setProducts((prev) => [
+        {
+          id: data.id,
+          name: data.name,
+          description: data.description,
+          price: data.price,
+          image: data.image || "",
+          category: data.category,
+        },
+        ...prev,
+      ]);
+    }
     setShowAdd(false);
-    setNewProduct({ name: "", description: "", price: "", category: "" });
+    setNewProduct({ name: "", description: "", price: "", category: "", image: "" });
     toast({ title: "Product Added!", description: "Your product is now visible in your showcase." });
   };
+
+  if (loading) {
+    return <div className="p-8 text-center text-muted-foreground">Loading products...</div>;
+  }
 
   return (
     <div className="px-4 py-5 space-y-5 animate-fade-in">
@@ -40,25 +100,40 @@ export default function ProductShowcasePage() {
       </div>
 
       {/* Product Grid */}
-      <div className="grid grid-cols-2 gap-3">
-        {products.map((product) => (
-          <div key={product.id} className="bg-card rounded-xl overflow-hidden shadow-card">
-            <img src={product.image} alt={product.name} className="w-full h-32 object-cover" />
-            <div className="p-3 space-y-1">
-              <h3 className="font-medium text-sm text-foreground leading-tight line-clamp-1">
-                {product.name}
-              </h3>
-              <p className="text-xs text-muted-foreground line-clamp-2">{product.description}</p>
-              <div className="flex items-center justify-between pt-1">
-                <span className="font-semibold text-sm text-primary">{product.price}</span>
-                <span className="text-xs text-muted-foreground bg-accent px-2 py-0.5 rounded-full">
-                  {product.category}
-                </span>
+      {products.length > 0 ? (
+        <div className="grid grid-cols-2 gap-3">
+          {products.map((product) => (
+            <div key={product.id} className="bg-card rounded-xl overflow-hidden shadow-card">
+              {product.image ? (
+                <img src={product.image} alt={product.name} className="w-full h-32 object-cover" />
+              ) : (
+                <div className="w-full h-32 bg-accent flex items-center justify-center">
+                  <Package className="h-10 w-10 text-muted-foreground" />
+                </div>
+              )}
+              <div className="p-3 space-y-1">
+                <h3 className="font-medium text-sm text-foreground leading-tight line-clamp-1">
+                  {product.name}
+                </h3>
+                <p className="text-xs text-muted-foreground line-clamp-2">{product.description}</p>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="font-semibold text-sm text-primary">{product.price}</span>
+                  {product.category && (
+                    <span className="text-xs text-muted-foreground bg-accent px-2 py-0.5 rounded-full">
+                      {product.category}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12 text-muted-foreground">
+          <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />
+          <p className="text-sm">No products yet. Add your first product!</p>
+        </div>
+      )}
 
       {/* Add Product Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
@@ -67,37 +142,53 @@ export default function ProductShowcasePage() {
             <DialogTitle className="font-heading">Add New Product</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <div className="flex items-center justify-center h-28 bg-accent rounded-lg border-2 border-dashed border-border cursor-pointer hover:border-primary/50 transition-colors">
-              <div className="text-center text-muted-foreground">
-                <Camera className="h-6 w-6 mx-auto mb-1" />
-                <span className="text-xs">Upload Photo</span>
-              </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Image URL (optional)</label>
+              <input
+                placeholder="e.g. https://example.com/image.jpg"
+                value={newProduct.image}
+                onChange={(e) => setNewProduct((p) => ({ ...p, image: e.target.value }))}
+                className="w-full px-3 py-2.5 rounded-lg bg-background border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-xs text-muted-foreground">Leave blank to use a default placeholder</p>
             </div>
             <input
-              placeholder="Product Name"
+              placeholder="e.g. Handcrafted Ceramic Bowl"
               value={newProduct.name}
               onChange={(e) => setNewProduct((p) => ({ ...p, name: e.target.value }))}
               className="w-full px-3 py-2.5 rounded-lg bg-background border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <textarea
-              placeholder="Description"
+              placeholder="e.g. Set of 4 hand-thrown bowls with natural glazes"
               value={newProduct.description}
               onChange={(e) => setNewProduct((p) => ({ ...p, description: e.target.value }))}
               className="w-full px-3 py-2.5 rounded-lg bg-background border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none h-20"
             />
             <div className="flex gap-3">
               <input
-                placeholder="Price (₹)"
+                placeholder="e.g. ₹1,200"
                 value={newProduct.price}
                 onChange={(e) => setNewProduct((p) => ({ ...p, price: e.target.value }))}
                 className="flex-1 px-3 py-2.5 rounded-lg bg-background border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
-              <input
-                placeholder="Category"
+              <select
                 value={newProduct.category}
                 onChange={(e) => setNewProduct((p) => ({ ...p, category: e.target.value }))}
-                className="flex-1 px-3 py-2.5 rounded-lg bg-background border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              />
+                className="flex-1 px-3 py-2.5 rounded-lg bg-background border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Category</option>
+                <option value="Pottery">Pottery</option>
+                <option value="Textiles">Textiles</option>
+                <option value="Jewelry">Jewelry</option>
+                <option value="Food Products">Food Products</option>
+                <option value="Beauty & Wellness">Beauty & Wellness</option>
+                <option value="Art & Decor">Art & Decor</option>
+                <option value="Woodcraft">Woodcraft</option>
+                <option value="Leather">Leather</option>
+                <option value="Baskets">Baskets</option>
+                <option value="Macrame">Macrame</option>
+                <option value="Other">Other</option>
+              </select>
             </div>
             <button
               onClick={handleAdd}

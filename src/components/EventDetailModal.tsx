@@ -1,4 +1,4 @@
-import { X, Calendar, MapPin, Users, Building } from "lucide-react";
+import { X, Calendar, MapPin, Users, Building, CalendarDays } from "lucide-react";
 import type { Event } from "@/data/mockData";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
@@ -18,7 +18,13 @@ export default function EventDetailModal({ event, open, onClose, onApply, applie
       <DialogContent className="max-w-md mx-auto p-0 bg-card rounded-xl overflow-hidden max-h-[90vh] overflow-y-auto">
         <DialogTitle className="sr-only">{event.name}</DialogTitle>
         <div className="relative">
-          <img src={event.image} alt={event.name} className="w-full h-48 object-cover" />
+          {event.image ? (
+            <img src={event.image} alt={event.name} className="w-full h-48 object-cover" />
+          ) : (
+            <div className="w-full h-48 bg-gradient-to-br from-primary/20 to-accent flex items-center justify-center">
+              <CalendarDays className="h-14 w-14 text-primary/40" />
+            </div>
+          )}
           <span className="absolute top-3 left-3 bg-primary/90 text-primary-foreground text-xs font-medium px-3 py-1 rounded-full">
             {event.category}
           </span>
@@ -53,11 +59,10 @@ export default function EventDetailModal({ event, open, onClose, onApply, applie
           <button
             onClick={() => onApply(event)}
             disabled={applied}
-            className={`w-full py-3 rounded-lg font-medium transition-colors ${
-              applied
+            className={`w-full py-3 rounded-lg font-medium transition-colors ${applied
                 ? "bg-success/20 text-success cursor-default"
                 : "bg-primary text-primary-foreground hover:bg-primary/90"
-            }`}
+              }`}
           >
             {applied ? "✓ Application Submitted" : "Apply for This Event"}
           </button>

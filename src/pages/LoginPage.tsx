@@ -9,16 +9,16 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!email || !password) {
       setError("Please fill in all fields");
       return;
     }
-    const success = login(email, password);
-    if (!success) {
-      setError("Invalid credentials. Try priya@artisan.com, rajiv@invest.com, or admin@artisan.com");
+    const res = await login(email, password);
+    if (!res.success) {
+      setError(res.error || "Invalid credentials.");
     }
   };
 

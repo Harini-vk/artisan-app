@@ -1,8 +1,10 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import { supabase } from "@/lib/supabase";
 
 export type UserRole = "entrepreneur" | "investor" | "organizer";
 
 export interface AuthUser {
+  id: string;
   name: string;
   email: string;
   role: UserRole;
@@ -10,50 +12,144 @@ export interface AuthUser {
   profile?: Record<string, any>;
 }
 
+interface AuthResult {
+  success: boolean;
+  error?: string;
+}
+
 interface AuthContextType {
   user: AuthUser | null;
-  login: (email: string, password: string) => boolean;
-  signup: (name: string, email: string, password: string, role: UserRole) => void;
-  completeOnboarding: (profileData: Record<string, any>) => void;
-  logout: () => void;
+  loading: boolean;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  signup: (name: string, email: string, password: string, role: UserRole) => Promise<AuthResult>;
+  completeOnboarding: (profileData: Record<string, any>) => Promise<AuthResult>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Mock user store
-const mockUsers: AuthUser[] = [
-  { name: "Priya Sharma", email: "priya@artisan.com", role: "entrepreneur", onboarded: true, profile: { phone: "+91 98765 43210", businessType: "Handmade Pottery & Ceramics", experience: "3-5 years", interests: ["Pottery", "Ceramics", "Natural Dyes"], categories: ["Home Decor", "Kitchenware", "Art"] } },
-  { name: "Rajiv Mehta", email: "rajiv@invest.com", role: "investor", onboarded: true, profile: { organization: "Artisan Capital Partners", investmentInterests: ["Handmade Crafts", "Textile Products"], preferredCategories: ["Home Decor", "Fashion"] } },
-  { name: "Admin Organizer", email: "admin@artisan.com", role: "organizer", onboarded: true, profile: { organization: "Women Artisans Collective", phone: "+91 99887 76655" } },
-];
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const login = (email: string, password: string): boolean => {
-    const found = mockUsers.find((u) => u.email === email);
-    if (found) {
-      setUser(found);
-      return true;
+  // Fetch full user data including custom tables
+  const fetchUserData = async (userId: string) => {
+    try {
+      // 1. Get base user
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (userError) throw userError;
+
+      // 2. Get profile data
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (profileError && profileError.code !== 'PGRST116') throw profileError;
+
+      if (userData) {
+        setUser({
+          id: userData.id,
+          name: userData.name,
+          email: userData.email,
+          role: userData.role as UserRole,
+          onboarded: profileData?.onboarded || false,
+          profile: profileData?.data || {},
+        });
+      }
+    } catch (e) {
+      console.error("Error fetching user data:", e);
+      setUser(null);
+    } finally {
+      setLoading(false);
     }
-    return false;
   };
 
-  const signup = (name: string, email: string, password: string, role: UserRole) => {
-    const newUser: AuthUser = { name, email, role, onboarded: false };
-    mockUsers.push(newUser);
-    setUser(newUser);
+  useEffect(() => {
+    // Check active session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        fetchUserData(session.user.id);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user) {
+          fetchUserData(session.user.id);
+        } else {
+          setUser(null);
+          setLoading(false);
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const login = async (email: string, password: string): Promise<AuthResult> => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
   };
 
-  const completeOnboarding = (profileData: Record<string, any>) => {
-    setUser((prev) => prev ? { ...prev, onboarded: true, profile: profileData } : null);
+  const signup = async (
+    name: string,
+    email: string,
+    password: string,
+    role: UserRole
+  ): Promise<AuthResult> => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name,
+          role,
+        }
+      }
+    });
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
   };
 
-  const logout = () => setUser(null);
+  const completeOnboarding = async (profileData: Record<string, any>): Promise<AuthResult> => {
+    if (!user) return { success: false, error: "Not logged in" };
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ onboarded: true, data: profileData, updated_at: new Date().toISOString() })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setUser({ ...user, onboarded: true, profile: profileData });
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message || "Failed to save profile" };
+    }
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, completeOnboarding, logout }}>
-      {children}
+    <AuthContext.Provider value={{ user, loading, login, signup, completeOnboarding, logout }}>
+      {!loading && children}
     </AuthContext.Provider>
   );
 }

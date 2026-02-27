@@ -10,14 +10,14 @@ const roles: { value: UserRole; label: string; desc: string; icon: typeof Briefc
 ];
 
 export default function SignupPage() {
-  const { signup } = useAuth();
+  const { signup, login } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole | "">("");
   const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!name || !email || !password || !role) {
@@ -28,7 +28,18 @@ export default function SignupPage() {
       setError("Password must be at least 6 characters");
       return;
     }
-    signup(name, email, password, role);
+    const res = await signup(name, email, password, role);
+    if (!res.success) {
+      setError(res.error || "Signup failed");
+    } else {
+      // Auto login after successful signup
+      const loginRes = await login(email, password);
+      // We don't need to manually navigate as the AuthContext state change 
+      // will cause AppRoutes to re-render and securely route to Onboarding.
+      if (!loginRes.success) {
+        setError("Account created, but couldn't auto-login. Please login manually.");
+      }
+    }
   };
 
   return (
@@ -88,15 +99,13 @@ export default function SignupPage() {
                 key={r.value}
                 type="button"
                 onClick={() => setRole(r.value)}
-                className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left ${
-                  role === r.value
-                    ? "border-primary bg-primary/10 ring-2 ring-ring"
-                    : "border-border bg-card hover:bg-accent"
-                }`}
+                className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left ${role === r.value
+                  ? "border-primary bg-primary/10 ring-2 ring-ring"
+                  : "border-border bg-card hover:bg-accent"
+                  }`}
               >
-                <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  role === r.value ? "bg-primary/20" : "bg-muted"
-                }`}>
+                <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${role === r.value ? "bg-primary/20" : "bg-muted"
+                  }`}>
                   <r.icon className={`h-5 w-5 ${role === r.value ? "text-primary" : "text-muted-foreground"}`} />
                 </div>
                 <div>

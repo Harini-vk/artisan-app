@@ -1,20 +1,43 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { User, Building2, Edit2, Save } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 export default function OrganizerProfilePage() {
-  const { user } = useAuth();
+  const { user, completeOnboarding } = useAuth();
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(user?.name || "");
-  const [org, setOrg] = useState(user?.profile?.organization || "Women Artisans Collective");
-  const [phone, setPhone] = useState(user?.profile?.phone || "+91 99887 76655");
-  const [email] = useState(user?.email || "");
+  const [name, setName] = useState("");
+  const [org, setOrg] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
 
-  const handleSave = () => {
-    setEditing(false);
-    toast({ title: "Profile Updated", description: "Your profile has been saved." });
+  useEffect(() => {
+    if (user) {
+      setName(user.name || "");
+      setOrg(user.profile?.organization || "");
+      setPhone(user.profile?.phone || "");
+      setEmail(user.email || "");
+    }
+  }, [user]);
+
+  const handleSave = async () => {
+    if (!user) return;
+
+    const res = await completeOnboarding({
+      ...user.profile,
+      organization: org,
+      phone: phone
+    });
+
+    if (res.success) {
+      setEditing(false);
+      toast({ title: "Profile Updated", description: "Your profile has been saved." });
+    } else {
+      toast({ title: "Error", description: res.error || "Failed to update profile", variant: "destructive" });
+    }
   };
+
+  if (!user) return <div className="p-8 text-center text-muted-foreground">Loading profile...</div>;
 
   return (
     <div className="px-4 py-5 space-y-5 animate-fade-in">

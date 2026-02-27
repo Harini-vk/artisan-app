@@ -37,13 +37,19 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
+    let res;
     if (role === "entrepreneur") {
-      completeOnboarding({ phone, businessType, experience, interests: selectedInterests, products });
+      res = await completeOnboarding({ phone, businessType, experience, interests: selectedInterests, products });
     } else {
-      completeOnboarding({ organization, interests: investInterests, phone });
+      res = await completeOnboarding({ organization, interests: investInterests, phone });
     }
-    toast({ title: "Welcome!", description: "Your profile has been set up successfully." });
+
+    if (res.success) {
+      toast({ title: "Welcome!", description: "Your profile has been set up successfully." });
+    } else {
+      toast({ title: "Error", description: res.error || "Failed to save profile", variant: "destructive" });
+    }
   };
 
   if (role === "entrepreneur") {
@@ -85,9 +91,8 @@ export default function OnboardingPage() {
             <div className="flex flex-wrap gap-2">
               {entrepreneurCategories.map((cat) => (
                 <button key={cat} type="button" onClick={() => toggleInterest(cat, selectedInterests, setSelectedInterests)}
-                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
-                    selectedInterests.includes(cat) ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
-                  }`}>{cat}</button>
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${selectedInterests.includes(cat) ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
+                    }`}>{cat}</button>
               ))}
             </div>
           </div>
@@ -161,9 +166,8 @@ export default function OnboardingPage() {
           <div className="flex flex-wrap gap-2">
             {investorCategories.map((cat) => (
               <button key={cat} type="button" onClick={() => toggleInterest(cat, investInterests, setInvestInterests)}
-                className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
-                  investInterests.includes(cat) ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
-                }`}>{cat}</button>
+                className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${investInterests.includes(cat) ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
+                  }`}>{cat}</button>
             ))}
           </div>
         </div>

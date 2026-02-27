@@ -1,30 +1,58 @@
-import { useState } from "react";
-import { recommendedEvents } from "@/data/mockData";
+import { useState, useEffect, useMemo } from "react";
 import type { Event } from "@/data/mockData";
 import EventCard from "@/components/EventCard";
 import EventDetailModal from "@/components/EventDetailModal";
 import heroBanner from "@/assets/hero-banner.jpg";
 import { toast } from "@/hooks/use-toast";
 import { Search, SlidersHorizontal, X } from "lucide-react";
-
-const categories = ["All", ...Array.from(new Set(recommendedEvents.map((e) => e.category)))];
+import { useEvents, useEventActions } from "@/hooks/useSupabase";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 
 export default function HomePage() {
+  const { events, loading } = useEvents();
+  const { registerForEvent } = useEventActions();
+  const { user } = useAuth();
+
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [showFilters, setShowFilters] = useState(false);
 
-  const handleApply = (event: Event) => {
-    setAppliedIds((prev) => new Set(prev).add(event.id));
-    toast({
-      title: "Application Submitted!",
-      description: `You've applied for ${event.name}. We'll notify you of updates.`,
-    });
+  // Fetch already-registered event IDs on page load
+  useEffect(() => {
+    async function fetchRegistered() {
+      if (!user) return;
+      const { data } = await supabase
+        .from("event_registrations")
+        .select("event_id")
+        .eq("user_id", user.id);
+      if (data) {
+        setAppliedIds(new Set(data.map((r: any) => r.event_id)));
+      }
+    }
+    fetchRegistered();
+  }, [user]);
+
+  const categories = useMemo(() => {
+    return ["All", ...Array.from(new Set(events.map((e) => e.category)))];
+  }, [events]);
+
+  const handleApply = async (event: Event) => {
+    const res = await registerForEvent(event.id);
+    if (res.success) {
+      setAppliedIds((prev) => new Set(prev).add(event.id));
+      toast({
+        title: "Application Submitted!",
+        description: `You've applied for ${event.name}. We'll notify you of updates.`,
+      });
+    } else {
+      toast({ title: "Error", description: res.error || "Failed to apply", variant: "destructive" });
+    }
   };
 
-  const filtered = recommendedEvents.filter((event) => {
+  const filtered = events.filter((event) => {
     const matchesSearch =
       !search ||
       event.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -84,11 +112,10 @@ export default function HomePage() {
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
-                className={`whitespace-nowrap text-xs font-medium px-3 py-2 rounded-full transition-colors ${
-                  activeCategory === cat
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-card text-muted-foreground hover:bg-accent"
-                }`}
+                className={`whitespace-nowrap text-xs font-medium px-3 py-2 rounded-full transition-colors ${activeCategory === cat
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-card text-muted-foreground hover:bg-accent"
+                  }`}
               >
                 {cat}
               </button>
@@ -124,6 +151,7 @@ export default function HomePage() {
                 event={event}
                 onViewDetails={setSelectedEvent}
                 onApply={handleApply}
+                applied={appliedIds.has(event.id)}
               />
             ))
           ) : (

@@ -81,7 +81,14 @@ function AppRoutes() {
             <Route path="/" element={<Navigate to="/organizer/events" replace />} />
           </>
         )}
-        <Route path="*" element={<NotFound />} />
+        {/* Redirect any unknown path to the role's home page */}
+        <Route path="*" element={
+          <Navigate to={
+            user.role === "organizer" ? "/organizer/events" :
+              user.role === "investor" ? "/investor/discover" :
+                "/"
+          } replace />
+        } />
       </Routes>
     </AppLayout>
   );

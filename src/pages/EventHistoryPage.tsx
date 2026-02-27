@@ -1,30 +1,89 @@
-import { useState } from "react";
-import { recommendedEvents } from "@/data/mockData";
-import type { Event, EventApplication } from "@/data/mockData";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
+import type { Event } from "@/data/mockData";
 import EventCard from "@/components/EventCard";
 import EventDetailModal from "@/components/EventDetailModal";
-
-const mockApplications: EventApplication[] = [
-  { eventId: "1", status: "applied", appliedDate: "Feb 10, 2026" },
-  { eventId: "2", status: "approved", appliedDate: "Feb 5, 2026" },
-  { eventId: "3", status: "past", appliedDate: "Jan 20, 2026" },
-];
+import { Clock } from "lucide-react";
 
 const tabs = [
-  { key: "applied", label: "Applied" },
-  { key: "approved", label: "Approved" },
-  { key: "past", label: "Past" },
+  { key: "registered", label: "Registered" },
+  { key: "past", label: "Past Events" },
 ] as const;
 
 export default function EventHistoryPage() {
-  const [activeTab, setActiveTab] = useState<"applied" | "approved" | "past">("applied");
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<"registered" | "past">("registered");
+  const [registeredEvents, setRegisteredEvents] = useState<Event[]>([]);
+  const [pastEvents, setPastEvents] = useState<Event[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
 
-  const filtered = mockApplications.filter((a) => a.status === activeTab);
-  const events = filtered.map((a) => ({
-    ...recommendedEvents.find((e) => e.id === a.eventId)!,
-    status: a.status,
-  }));
+  useEffect(() => {
+    async function fetchHistory() {
+      if (!user) return;
+      setLoading(true);
+
+      // Fetch registered events
+      const { data: regData } = await supabase
+        .from("event_registrations")
+        .select("event_id, events(*)")
+        .eq("user_id", user.id);
+
+      if (regData) {
+        const mapped: Event[] = regData
+          .filter((r: any) => r.events)
+          .map((r: any) => ({
+            id: r.events.id,
+            name: r.events.name,
+            category: r.events.event_type,
+            date: r.events.event_date,
+            description: r.events.description,
+            longDescription: r.events.description,
+            image: "",
+            location: r.events.location,
+            organizer: r.events.organizer_id,
+            eligibility: r.events.industry_focus,
+          }));
+        setRegisteredEvents(mapped);
+      }
+
+      // Fetch past events (events with dates before today)
+      const today = new Date().toISOString().split('T')[0];
+      const { data: pastData } = await supabase
+        .from("event_registrations")
+        .select("event_id, events(*)")
+        .eq("user_id", user.id)
+        .lt("events.event_date", today);
+
+      if (pastData) {
+        const mapped: Event[] = pastData
+          .filter((s: any) => s.events)
+          .map((s: any) => ({
+            id: s.events.id,
+            name: s.events.name,
+            category: s.events.event_type,
+            date: s.events.event_date,
+            description: s.events.description,
+            longDescription: s.events.description,
+            image: "",
+            location: s.events.location,
+            organizer: s.events.organizer_id,
+            eligibility: s.events.industry_focus,
+          }));
+        setPastEvents(mapped);
+      }
+
+      setLoading(false);
+    }
+    fetchHistory();
+  }, [user]);
+
+  const events = activeTab === "registered" ? registeredEvents : pastEvents;
+
+  if (loading) {
+    return <div className="p-8 text-center text-muted-foreground">Loading event history...</div>;
+  }
 
   return (
     <div className="px-4 py-5 space-y-5 animate-fade-in">
@@ -36,11 +95,10 @@ export default function EventHistoryPage() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-              activeTab === tab.key
-                ? "bg-primary text-primary-foreground"
-                : "bg-card text-muted-foreground hover:bg-accent"
-            }`}
+            className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors ${activeTab === tab.key
+              ? "bg-primary text-primary-foreground"
+              : "bg-card text-muted-foreground hover:bg-accent"
+              }`}
           >
             {tab.label}
           </button>
@@ -55,11 +113,12 @@ export default function EventHistoryPage() {
               key={event.id}
               event={event}
               onViewDetails={setSelectedEvent}
-              status={event.status}
+              status={activeTab === "registered" ? "applied" : "past"}
             />
           ))
         ) : (
           <div className="text-center py-12 text-muted-foreground">
+            <Clock className="h-12 w-12 mx-auto mb-3 opacity-50" />
             <p className="text-sm">No {activeTab} events yet</p>
           </div>
         )}
@@ -69,7 +128,7 @@ export default function EventHistoryPage() {
         event={selectedEvent}
         open={!!selectedEvent}
         onClose={() => setSelectedEvent(null)}
-        onApply={() => {}}
+        onApply={() => { }}
         applied
       />
     </div>

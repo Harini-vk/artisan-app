@@ -1,4 +1,4 @@
-import { Calendar, MapPin, Tag } from "lucide-react";
+import { Calendar, MapPin, Tag, CalendarDays } from "lucide-react";
 import type { Event } from "@/data/mockData";
 
 interface EventCardProps {
@@ -6,6 +6,7 @@ interface EventCardProps {
   onViewDetails: (event: Event) => void;
   onApply?: (event: Event) => void;
   status?: "applied" | "approved" | "past";
+  applied?: boolean;
 }
 
 const statusStyles = {
@@ -20,15 +21,21 @@ const statusLabels = {
   past: "Completed",
 };
 
-export default function EventCard({ event, onViewDetails, onApply, status }: EventCardProps) {
+export default function EventCard({ event, onViewDetails, onApply, status, applied }: EventCardProps) {
   return (
     <div className="bg-card rounded-xl overflow-hidden shadow-card animate-fade-in">
       <div className="relative">
-        <img
-          src={event.image}
-          alt={event.name}
-          className="w-full h-40 object-cover"
-        />
+        {event.image ? (
+          <img
+            src={event.image}
+            alt={event.name}
+            className="w-full h-40 object-cover"
+          />
+        ) : (
+          <div className="w-full h-40 bg-gradient-to-br from-primary/20 to-accent flex items-center justify-center">
+            <CalendarDays className="h-12 w-12 text-primary/40" />
+          </div>
+        )}
         <span className="absolute top-3 left-3 bg-primary/90 text-primary-foreground text-xs font-medium px-3 py-1 rounded-full backdrop-blur-sm">
           {event.category}
         </span>
@@ -64,10 +71,14 @@ export default function EventCard({ event, onViewDetails, onApply, status }: Eve
           </button>
           {!status && onApply && (
             <button
-              onClick={() => onApply(event)}
-              className="flex-1 text-sm font-medium py-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              onClick={() => !applied && onApply(event)}
+              disabled={applied}
+              className={`flex-1 text-sm font-medium py-2.5 rounded-lg transition-colors ${applied
+                  ? "bg-success/20 text-success cursor-default"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90"
+                }`}
             >
-              Apply Now
+              {applied ? "✓ Applied" : "Apply Now"}
             </button>
           )}
         </div>

@@ -1,24 +1,63 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { User, Building2, Tag, Edit2, Save } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
-const initialProfile = {
-  name: "Rajiv Mehta",
-  email: "rajiv@investor.com",
-  phone: "+91 99887 76655",
-  organization: "Mehta Ventures",
-  investmentInterests: "Small-scale artisan businesses, sustainable crafts",
-  preferredCategories: ["Handmade Crafts", "Textile Products", "Beauty and Wellness"],
-};
+const allInterests = ["Handmade Crafts", "Textile Products", "Food Products", "Beauty and Wellness", "Art and Decor", "Pottery", "Jewelry", "Woodcraft", "Leather", "Technology"];
 
 export default function InvestorProfilePage() {
-  const [profile, setProfile] = useState(initialProfile);
+  const { user, completeOnboarding } = useAuth();
+
+  const [profile, setProfile] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    organization: "",
+    interests: [] as string[],
+  });
+
   const [editing, setEditing] = useState(false);
 
-  const handleSave = () => {
-    setEditing(false);
-    toast({ title: "Profile Updated", description: "Your investor profile has been saved." });
+  useEffect(() => {
+    if (user) {
+      setProfile({
+        name: user.name || "",
+        email: user.email || "",
+        phone: user.profile?.phone || "",
+        organization: user.profile?.organization || "",
+        interests: user.profile?.interests || [],
+      });
+    }
+  }, [user]);
+
+  const toggleInterest = (interest: string) => {
+    setProfile((p) => ({
+      ...p,
+      interests: p.interests.includes(interest)
+        ? p.interests.filter((i) => i !== interest)
+        : [...p.interests, interest],
+    }));
   };
+
+  const handleSave = async () => {
+    if (!user) return;
+
+    const res = await completeOnboarding({
+      ...user.profile,
+      phone: profile.phone,
+      organization: profile.organization,
+      interests: profile.interests,
+    });
+
+    if (res.success) {
+      setEditing(false);
+      toast({ title: "Profile Updated", description: "Your investor profile has been saved successfully." });
+    } else {
+      toast({ title: "Error", description: res.error || "Failed to update profile", variant: "destructive" });
+    }
+  };
+
+  if (!user) return <div className="p-8 text-center text-muted-foreground">Loading profile...</div>;
 
   return (
     <div className="px-4 py-5 space-y-5 animate-fade-in">
@@ -29,7 +68,7 @@ export default function InvestorProfilePage() {
         </div>
         <div>
           <h2 className="font-heading text-xl font-bold text-foreground">{profile.name}</h2>
-          <p className="text-sm text-muted-foreground">{profile.organization}</p>
+          <p className="text-sm text-muted-foreground">{profile.organization || "Investor"}</p>
         </div>
         <button
           onClick={() => (editing ? handleSave() : setEditing(true))}
@@ -47,20 +86,20 @@ export default function InvestorProfilePage() {
         </h3>
         <div className="space-y-3">
           {[
-            { label: "Full Name", value: profile.name, key: "name" },
-            { label: "Email", value: profile.email, key: "email" },
-            { label: "Phone", value: profile.phone, key: "phone" },
+            { label: "Full Name", value: profile.name, key: "name", editable: false },
+            { label: "Email", value: profile.email, key: "email", editable: false },
+            { label: "Phone", value: profile.phone, key: "phone", editable: true },
           ].map((field) => (
             <div key={field.key}>
               <label className="text-xs text-muted-foreground font-medium">{field.label}</label>
-              {editing ? (
+              {editing && field.editable ? (
                 <input
                   value={field.value}
                   onChange={(e) => setProfile((p) => ({ ...p, [field.key]: e.target.value }))}
                   className="w-full mt-1 px-3 py-2 rounded-lg bg-background border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               ) : (
-                <p className="text-sm text-foreground mt-0.5">{field.value}</p>
+                <p className="text-sm text-foreground mt-0.5">{field.value || "-"}</p>
               )}
             </div>
           ))}
@@ -81,33 +120,45 @@ export default function InvestorProfilePage() {
               className="w-full mt-1 px-3 py-2 rounded-lg bg-background border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
           ) : (
-            <p className="text-sm text-foreground mt-0.5">{profile.organization}</p>
-          )}
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground font-medium">Investment Interests</label>
-          {editing ? (
-            <textarea
-              value={profile.investmentInterests}
-              onChange={(e) => setProfile((p) => ({ ...p, investmentInterests: e.target.value }))}
-              className="w-full mt-1 px-3 py-2 rounded-lg bg-background border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none h-20"
-            />
-          ) : (
-            <p className="text-sm text-foreground mt-0.5">{profile.investmentInterests}</p>
+            <p className="text-sm text-foreground mt-0.5">{profile.organization || "-"}</p>
           )}
         </div>
       </div>
 
-      {/* Preferred Categories */}
-      <div className="bg-card rounded-xl p-4 shadow-card">
-        <h3 className="font-heading font-semibold text-foreground flex items-center gap-2 mb-3">
-          <Tag className="h-4 w-4 text-primary" /> Preferred Categories
+      {/* Investment Interests */}
+      <div className="bg-card rounded-xl p-4 shadow-card space-y-3">
+        <h3 className="font-heading font-semibold text-foreground flex items-center gap-2">
+          <Tag className="h-4 w-4 text-primary" /> Investment Interests
         </h3>
-        <div className="flex flex-wrap gap-2">
-          {profile.preferredCategories.map((c) => (
-            <span key={c} className="text-xs font-medium bg-primary/10 text-primary px-3 py-1.5 rounded-full">{c}</span>
-          ))}
-        </div>
+        {editing ? (
+          <div className="flex flex-wrap gap-2">
+            {allInterests.map((interest) => (
+              <button
+                key={interest}
+                type="button"
+                onClick={() => toggleInterest(interest)}
+                className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${profile.interests.includes(interest)
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-accent"
+                  }`}
+              >
+                {interest}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {profile.interests.length > 0 ? (
+              profile.interests.map((interest) => (
+                <span key={interest} className="text-xs font-medium bg-primary/10 text-primary px-3 py-1.5 rounded-full">
+                  {interest}
+                </span>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No interests selected yet. Edit your profile to add interests.</p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
