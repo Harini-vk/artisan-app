@@ -4,13 +4,15 @@ import EventCard from "@/components/EventCard";
 import EventDetailModal from "@/components/EventDetailModal";
 import heroBanner from "@/assets/hero-banner.jpg";
 import { toast } from "@/hooks/use-toast";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { Search, SlidersHorizontal, X, Sparkles } from "lucide-react";
 import { useEvents, useEventActions } from "@/hooks/useSupabase";
+import { useRecommendations } from "@/hooks/useRecommendations";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 
 export default function HomePage() {
-  const { events, loading } = useEvents();
+  const { events, loading: eventsLoading } = useEvents();
+  const { recommendedEvents, loading: recsLoading, error: recsError, modelUsed } = useRecommendations();
   const { registerForEvent } = useEventActions();
   const { user } = useAuth();
 
@@ -35,9 +37,19 @@ export default function HomePage() {
     fetchRegistered();
   }, [user]);
 
+  // Use recommended events if available, otherwise fall back to all events
+  const displayEvents = useMemo(() => {
+    if (recommendedEvents.length > 0) {
+      return recommendedEvents;
+    }
+    return events;
+  }, [recommendedEvents, events]);
+
+  const isUsingRecommendations = recommendedEvents.length > 0;
+
   const categories = useMemo(() => {
-    return ["All", ...Array.from(new Set(events.map((e) => e.category)))];
-  }, [events]);
+    return ["All", ...Array.from(new Set(displayEvents.map((e) => e.category)))];
+  }, [displayEvents]);
 
   const handleApply = async (event: Event) => {
     const res = await registerForEvent(event.id);
@@ -52,7 +64,7 @@ export default function HomePage() {
     }
   };
 
-  const filtered = events.filter((event) => {
+  const filtered = displayEvents.filter((event) => {
     const matchesSearch =
       !search ||
       event.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -63,6 +75,7 @@ export default function HomePage() {
   });
 
   const hasActiveFilters = search || activeCategory !== "All";
+  const loading = eventsLoading || recsLoading;
 
   const clearFilters = () => {
     setSearch("");
@@ -133,8 +146,15 @@ export default function HomePage() {
       {/* Recommended Events */}
       <div className="px-4 space-y-4">
         <div>
-          <h2 className="font-heading text-xl font-bold text-foreground">
-            {hasActiveFilters ? `Results (${filtered.length})` : "Recommended Events For You"}
+          <h2 className="font-heading text-xl font-bold text-foreground flex items-center gap-2">
+            {hasActiveFilters ? (
+              `Results (${filtered.length})`
+            ) : (
+              <>
+                <Sparkles className="h-5 w-5 text-amber-500" />
+                Recommended Events For You
+              </>
+            )}
           </h2>
           {!hasActiveFilters && (
             <p className="text-sm text-muted-foreground mt-1">
@@ -143,23 +163,38 @@ export default function HomePage() {
           )}
         </div>
 
-        <div className="space-y-4">
-          {filtered.length > 0 ? (
-            filtered.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                onViewDetails={setSelectedEvent}
-                onApply={handleApply}
-                applied={appliedIds.has(event.id)}
-              />
-            ))
-          ) : (
-            <div className="text-center py-12 text-muted-foreground">
-              <p className="text-sm">No events match your search</p>
-            </div>
-          )}
-        </div>
+        {loading ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent mb-3" />
+            <p className="text-sm">Finding the best events for you...</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filtered.length > 0 ? (
+              filtered.map((event) => (
+                <div key={event.id} className="relative">
+                  {/* Match score badge */}
+                  {isUsingRecommendations && (event as any).match_score != null && !hasActiveFilters && (
+                    <div className="absolute top-3 right-3 z-10 bg-amber-500/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Sparkles className="h-3 w-3" />
+                      {Math.round((event as any).match_score * 100)}% match
+                    </div>
+                  )}
+                  <EventCard
+                    event={event}
+                    onViewDetails={setSelectedEvent}
+                    onApply={handleApply}
+                    applied={appliedIds.has(event.id)}
+                  />
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-sm">No events match your search</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <EventDetailModal

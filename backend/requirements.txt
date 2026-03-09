@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+supabase
+fasttext-wheel
+numpy
+scikit-learn

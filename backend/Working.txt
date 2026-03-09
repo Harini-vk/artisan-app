@@ -1,0 +1,184 @@
+================================================================================
+          EVENT RECOMMENDATION SYSTEM — HOW IT WORKS
+================================================================================
+
+OVERVIEW
+--------
+The recommendation system matches events to users based on their profile 
+(interests, business type, categories) using a HYBRID approach that combines:
+
+  1. Custom-trained FastText Model (Semantic Understanding)
+  2. TF-IDF (Term Frequency–Inverse Document Frequency) (Keyword Matching)
+
+
+================================================================================
+ARCHITECTURE FLOW
+================================================================================
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                        USER REQUEST                                │
+  │                  POST /recommend { user_id }                       │
+  └──────────────────────────┬──────────────────────────────────────────┘
+                             │
+                             ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                  1. FETCH DATA FROM SUPABASE                       │
+  │                                                                     │
+  │   User Profile (from 'profiles' table):                            │
+  │     - businessType (e.g. "Handmade Pottery & Ceramics")            │
+  │     - interests   (e.g. ["Pottery", "Ceramics", "Textiles"])       │
+  │     - categories  (e.g. ["Pottery", "Art & Decor"])                │
+  │                                                                     │
+  │   All Events (from 'events' table):                                │
+  │     - name, description, event_type, industry_focus                │
+  └──────────────────────────┬──────────────────────────────────────────┘
+                             │
+                             ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │              2. BUILD TEXT REPRESENTATIONS                          │
+  │                                                                     │
+  │   User Text = businessType + " " + interests + " " + categories    │
+  │   Example: "Handmade Pottery Ceramics Pottery Textiles Art Decor"  │
+  │                                                                     │
+  │   Event Text = name + " " + description + " " + event_type        │
+  │                + " " + industry_focus                               │
+  │   Example: "Artisan Craft Fair 2026 Showcase your handmade         │
+  │             products... Craft Fair Pottery Ceramics"                │
+  └──────────┬──────────────────────────────────┬──────────────────────┘
+             │                                  │
+             ▼                                  ▼
+  ┌──────────────────────┐          ┌──────────────────────────┐
+  │  3A. FASTTEXT MODEL  │          │  3B. TF-IDF VECTORIZER   │
+  │  (Semantic Matching) │          │  (Keyword Matching)       │
+  │                      │          │                           │
+  │  Uses the custom     │          │  Converts text to         │
+  │  trained model:      │          │  term-frequency vectors   │
+  │  events_embeddings   │          │  and computes cosine      │
+  │  .bin                │          │  similarity               │
+  │                      │          │                           │
+  │  How it works:       │          │  How it works:            │
+  │  - Splits text into  │          │  - Counts word frequency  │
+  │    words             │          │    in each document       │
+  │  - Gets vector for   │          │  - Weights by inverse     │
+  │    each word from    │          │    document frequency     │
+  │    the model         │          │  - Words that appear in   │
+  │  - Averages all word │          │    fewer documents get    │
+  │    vectors into ONE  │          │    higher weight          │
+  │    embedding vector  │          │  - Compares vectors via   │
+  │  - Does this for     │          │    cosine similarity      │
+  │    user AND each     │          │                           │
+  │    event             │          │  Strength:                │
+  │                      │          │  Exact keyword matches    │
+  │  Strength:           │          │  e.g. "pottery" in user   │
+  │  Understands meaning │          │  matches "pottery" in     │
+  │  e.g. "ceramics" ≈   │          │  event perfectly          │
+  │  "pottery" even if   │          │                           │
+  │  words differ        │          │                           │
+  └──────────┬───────────┘          └──────────┬────────────────┘
+             │                                  │
+             │  FastText Score                  │  TF-IDF Score
+             │  (0.0 to 1.0)                    │  (0.0 to 1.0)
+             │                                  │
+             ▼                                  ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                 4. COMBINE SCORES (Hybrid)                         │
+  │                                                                     │
+  │   final_score = 0.7 × FastText_score + 0.3 × TF-IDF_score         │
+  │                                                                     │
+  │   FastText gets 70% weight because:                                │
+  │     - It understands MEANING, not just keywords                    │
+  │     - Trained on bilingual product/commerce corpus                 │
+  │     - Captures relationships like "jewelry" ↔ "ornaments"          │
+  │                                                                     │
+  │   TF-IDF gets 30% weight because:                                 │
+  │     - It rewards EXACT word matches                                │
+  │     - If user says "pottery" and event says "pottery", boosted     │
+  │     - Complements FastText's semantic matching                     │
+  └──────────────────────────┬──────────────────────────────────────────┘
+                             │
+                             ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                 5. RANK & RETURN RESULTS                            │
+  │                                                                     │
+  │   Sort all events by final_score (highest first)                   │
+  │   Return JSON with event details + match_score                     │
+  │                                                                     │
+  │   Example Response:                                                │
+  │   [                                                                │
+  │     {                                                              │
+  │       "id": "abc-123",                                             │
+  │       "name": "Artisan Craft Fair 2026",                           │
+  │       "event_type": "Craft Fair",                                  │
+  │       "match_score": 0.92,                                        │
+  │       ...                                                          │
+  │     },                                                             │
+  │     {                                                              │
+  │       "id": "def-456",                                             │
+  │       "name": "Textile & Weaving Expo",                            │
+  │       "match_score": 0.78,                                        │
+  │       ...                                                          │
+  │     }                                                              │
+  │   ]                                                                │
+  └─────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+MODEL DETAILS
+================================================================================
+
+Model File:     events_embeddings.bin (~800 MB)
+Model Type:     FastText (unsupervised, trained with fasttext)
+Training Data:  bilingual_fasttext_training_corpus.txt (~13 MB, ~193K lines)
+                - Bilingual corpus (English + Tamil)
+                - Product descriptions from e-commerce
+                - Contains product categories, attributes, descriptions
+                - Covers: clothing, crafts, home decor, beauty, food, etc.
+
+Why FastText?
+  - Handles misspellings and rare words via subword (character n-gram) approach
+  - Can generate vectors for words NOT seen during training
+  - Trained on product/craft vocabulary relevant to our use case
+  - Supports bilingual text (English + Tamil)
+
+
+================================================================================
+TECH STACK
+================================================================================
+
+Backend:        Python + FastAPI
+Model Loading:  fasttext (Python library)
+Vectorization:  TF-IDF via scikit-learn (TfidfVectorizer)
+Math:           numpy (cosine similarity, vector averaging)
+Database:       Supabase (PostgreSQL) via supabase-py
+Frontend:       React + TypeScript (calls the /recommend API endpoint)
+
+
+================================================================================
+API ENDPOINT
+================================================================================
+
+POST http://localhost:8000/recommend
+
+Request Body:
+  {
+    "user_id": "uuid-of-the-user"
+  }
+
+Response:
+  {
+    "recommendations": [
+      {
+        "id": "event-uuid",
+        "name": "Event Name",
+        "description": "...",
+        "event_type": "Workshop",
+        "industry_focus": "Pottery",
+        "event_date": "2026-04-15",
+        "location": "Chennai, India",
+        "match_score": 0.92
+      },
+      ...
+    ],
+    "user_profile_summary": "Pottery Ceramics Textiles Art Decor",
+    "model_used": "FastText + TF-IDF Hybrid"
+  }
