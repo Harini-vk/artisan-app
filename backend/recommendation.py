@@ -19,8 +19,7 @@ from supabase import create_client
 SUPABASE_URL = "https://cqpfzhfrxfoyuqbiocwq.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxcGZ6aGZyeGZveXVxYmlvY3dxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5Nzc3NDYsImV4cCI6MjA4NzU1Mzc0Nn0.U1WDjhasOP6Q_UYBkKHoE8lGcw09h3GCzEumAzL0DOU"
 
-MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "events_embeddings.bin")
-
+MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model", "bilingual_fasttext_model.bin")
 # Hybrid weights
 FASTTEXT_WEIGHT = 0.7
 TFIDF_WEIGHT = 0.3
@@ -31,8 +30,8 @@ app = FastAPI(title="Event Recommendation API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:8080", "http://localhost:3000"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -245,9 +244,159 @@ def recommend_events(req: RecommendRequest):
     }
 
 
+SCHEMES_DATA = [
+    {
+        "id": "1",
+        "name": "Mudra Yojana (PMMY)",
+        "type": "Loan",
+        "description": "Micro-credit up to ₹10 lakh for income-generating micro enterprises without collateral.",
+        "eligibility": "Women entrepreneurs in manufacturing, trading, or service sectors",
+        "benefits": "Shishu (up to 50K), Kishore (50K to 5L), Tarun (5L to 10L)",
+        "link": "https://www.mudra.org.in/"
+    },
+    {
+        "id": "2",
+        "name": "Stand-Up India Scheme",
+        "type": "Subsidy/Loan",
+        "description": "Facilitates bank loans between ₹10 lakh and ₹1 crore for SC/ST and Women entrepreneurs.",
+        "eligibility": "Women setting up greenfield enterprise in manufacturing, services or trading sector",
+        "benefits": "Composite loan (inclusive of term loan and working capital) up to ₹1 crore",
+        "link": "https://www.standupmitra.in/"
+    },
+    {
+        "id": "3",
+        "name": "Mahila Samridhi Yojana",
+        "type": "Micro Finance",
+        "description": "Microfinance scheme for women belonging to backward classes to start small businesses.",
+        "eligibility": "Women belonging to marginalized communities.",
+        "benefits": "Loan up to ₹1,40,000 at lower interest rates.",
+        "link": "https://nbcfdc.gov.in/"
+    },
+    {
+        "id": "4",
+        "name": "TREAD Scheme",
+        "type": "Grant / Credit",
+        "description": "Trade Related Entrepreneurship Assistance and Development scheme provides credit to projects.",
+        "eligibility": "Women who lack access to formal credit.",
+        "benefits": "Upto 30% grant or subsidy of total project cost.",
+        "link": "https://msme.gov.in/"
+    },
+    {
+        "id": "5",
+        "name": "PMEGP",
+        "type": "Grant",
+        "description": "Prime Minister's Employment Generation Programme.",
+        "eligibility": "Any individual, above 18 years of age.",
+        "benefits": "15-35% subsidy on project cost.",
+        "link": "https://www.kviconline.gov.in/"
+    }
+]
+
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
         "model_loaded": ft_model is not None,
     }
+
+
+@app.get("/schemes")
+def get_schemes():
+    """Returns a list of real Government Schemes available for women entrepreneurs."""
+    return {"schemes": SCHEMES_DATA}
+
+
+@app.get("/notifications/{user_id}")
+def get_notifications(user_id: str):
+    """
+    Dynamically generate notifications for the given user.
+    Uses Event Recommendations, Applications, and General Schemes.
+    """
+    notifications = []
+    notif_id_counter = [1]
+
+    def make_id():
+        curr = str(notif_id_counter[0])
+        notif_id_counter[0] += 1
+        return curr
+
+    # 1. New Scheme Available (Static highlight)
+    notifications.append({
+        "id": make_id(),
+        "title": "New Scheme Available",
+        "message": "Check out the Mudra Yojana scheme for women entrepreneurs offering up to ₹10 lakh without collateral.",
+        "time": "Just now",
+        "read": False,
+        "type": "scheme"
+    })
+
+    # 2. Check recommendations for top events
+    try:
+        req = RecommendRequest(**{"user_id": user_id})
+        rec_data = recommend_events(req)
+        top_events = rec_data.get("recommendations", [])
+        
+        if top_events and len(top_events) > 0:
+            top_event = top_events[0]
+            # If the score is decent, notify
+            if top_event["match_score"] > 0.4:
+                notifications.append({
+                    "id": make_id(),
+                    "title": "New Event Recommended",
+                    "message": f"{top_event['name']} matches your profile interests.",
+                    "time": "2 hours ago",
+                    "read": False,
+                    "type": "event"
+                })
+    except Exception as e:
+        print(f"Error fetching recommendations for notifications: {e}")
+
+    # 3. Check application approvals & Event Reminders
+    try:
+        app_resp = supabase.table("applications").select("*, events(*)").eq("user_id", user_id).execute()
+        apps = app_resp.data or []
+        
+        for app_record in apps:
+            status = app_record.get("status", "").lower()
+            event_name = "Event"
+            if app_record.get("events"):
+                event_name = app_record["events"].get("name", "Event")
+
+            # Notification: Application Approved
+            if status == "approved":
+                notifications.append({
+                    "id": make_id(),
+                    "title": "Application Approved",
+                    "message": f"Your application for {event_name} has been approved!",
+                    "time": "1 day ago",
+                    "read": False,
+                    "type": "status"
+                })
+                
+                # Highlight an event reminder
+                notifications.append({
+                    "id": make_id(),
+                    "title": "Event Reminder",
+                    "message": f"Don't forget to prepare for {event_name} coming up soon!",
+                    "time": "3 days ago",
+                    "read": True, # Marked as read usually
+                    "type": "event"
+                })
+                
+            elif status == "rejected":
+                notifications.append({
+                    "id": make_id(),
+                    "title": "Application Update",
+                    "message": f"Your application for {event_name} was not accepted this time.",
+                    "time": "1 day ago",
+                    "read": True,
+                    "type": "status"
+                })
+    except Exception as e:
+        print(f"Error fetching applications: {e}")
+
+    # Sort notifications to have unread first (simulated times)
+    notifications.sort(key=lambda x: not x["read"], reverse=True)
+
+    return {"notifications": notifications}

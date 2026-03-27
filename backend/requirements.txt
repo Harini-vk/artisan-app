@@ -4,3 +4,5 @@ supabase
 fasttext-wheel
 numpy
 scikit-learn
+flask
+pandas
