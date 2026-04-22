@@ -174,10 +174,10 @@ export default function HomePage() {
               filtered.map((event) => (
                 <div key={event.id} className="relative">
                   {/* Match score badge */}
-                  {isUsingRecommendations && (event as any).match_score != null && !hasActiveFilters && (
+                  {isUsingRecommendations && event.match_score != null && (
                     <div className="absolute top-3 right-3 z-10 bg-amber-500/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                       <Sparkles className="h-3 w-3" />
-                      {Math.round((event as any).match_score * 100)}% match
+                      {(event.match_percentage ?? Math.round(event.match_score * 100))}% match
                     </div>
                   )}
                   <EventCard

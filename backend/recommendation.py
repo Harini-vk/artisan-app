@@ -19,7 +19,12 @@ from supabase import create_client
 SUPABASE_URL = "https://cqpfzhfrxfoyuqbiocwq.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxcGZ6aGZyeGZveXVxYmlvY3dxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE5Nzc3NDYsImV4cCI6MjA4NzU1Mzc0Nn0.U1WDjhasOP6Q_UYBkKHoE8lGcw09h3GCzEumAzL0DOU"
 
-MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model", "bilingual_fasttext_model.bin")
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_CANDIDATES = [
+    os.getenv("FASTTEXT_MODEL_PATH", "").strip(),
+    os.path.join(BACKEND_DIR, "model", "bilingual_fasttext_model.bin"),
+    os.path.join(BACKEND_DIR, "events_embeddings.bin"),
+]
 # Hybrid weights
 FASTTEXT_WEIGHT = 0.7
 TFIDF_WEIGHT = 0.3
@@ -40,12 +45,18 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ─── Load FastText Model ─────────────────────────────────────────────────────
 
-print(f"Loading FastText model from {MODEL_PATH}...")
-try:
-    ft_model = fasttext.load_model(MODEL_PATH)
-    print("FastText model loaded successfully!")
-except Exception as e:
-    print(f"Error loading FastText model: {e}")
+MODEL_PATH = next((path for path in MODEL_CANDIDATES if path and os.path.exists(path)), None)
+
+if MODEL_PATH:
+    print(f"Loading FastText model from {MODEL_PATH}...")
+    try:
+        ft_model = fasttext.load_model(MODEL_PATH)
+        print("FastText model loaded successfully!")
+    except Exception as e:
+        print(f"Error loading FastText model: {e}")
+        ft_model = None
+else:
+    print("FastText model file not found. Checked:", MODEL_CANDIDATES)
     ft_model = None
 
 # ─── Pydantic Models ─────────────────────────────────────────────────────────
@@ -57,29 +68,26 @@ class RecommendRequest(BaseModel):
 
 def text_to_fasttext_embedding(text: str) -> np.ndarray | None:
     """
-    Convert text to a FastText embedding by averaging word vectors.
-    The FastText model can generate vectors even for unseen words
-    thanks to its subword (character n-gram) approach.
+    Convert text to a FastText embedding.
+    Uses `get_sentence_vector` which is typically more stable for multi-word inputs
+    than manually averaging per-word vectors.
     """
     if ft_model is None:
         return None
 
-    words = text.lower().replace(",", " ").replace("&", " ").split()
-    words = [w.strip() for w in words if len(w.strip()) > 1]
-
-    if not words:
+    clean = str(text).strip()
+    if not clean:
         return None
 
-    vectors = []
-    for word in words:
-        vec = ft_model.get_word_vector(word)
-        if np.any(vec):  # skip zero vectors
-            vectors.append(vec)
-
-    if not vectors:
+    vec = ft_model.get_sentence_vector(clean)
+    if vec is None:
         return None
 
-    return np.mean(vectors, axis=0)
+    vec = np.asarray(vec)
+    if vec.size == 0 or not np.any(vec):
+        return None
+
+    return vec
 
 
 def cosine_sim(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
@@ -110,7 +118,6 @@ def build_user_text(profile_data: dict) -> str:
     if categories:
         parts.append(" ".join(categories))
 
-    # Also include organization if present (for investors)
     organization = profile_data.get("organization", "")
     if organization:
         parts.append(organization)
@@ -138,6 +145,7 @@ def root():
     return {
         "service": "Event Recommendation API",
         "model_loaded": ft_model is not None,
+        "model_path": MODEL_PATH,
         "approach": "Hybrid FastText + TF-IDF",
         "fasttext_weight": FASTTEXT_WEIGHT,
         "tfidf_weight": TFIDF_WEIGHT,
@@ -184,7 +192,6 @@ def recommend_events(req: RecommendRequest):
             event_embedding = text_to_fasttext_embedding(event_text)
             if event_embedding is not None:
                 score = cosine_sim(user_embedding, event_embedding)
-                # Normalize to 0-1 range (cosine can be -1 to 1)
                 score = (score + 1) / 2
                 fasttext_scores.append(score)
             else:
@@ -194,6 +201,7 @@ def recommend_events(req: RecommendRequest):
 
     # 3B. TF-IDF scoring
     tfidf_scores = []
+    tfidf_ok = True
     try:
         all_texts = [user_text] + event_texts
         vectorizer = TfidfVectorizer(stop_words="english", max_features=5000)
@@ -205,19 +213,45 @@ def recommend_events(req: RecommendRequest):
         similarities = sklearn_cosine_similarity(user_tfidf, event_tfidf).flatten()
         tfidf_scores = similarities.tolist()
     except Exception:
+        tfidf_ok = False
         tfidf_scores = [0.0] * len(events)
 
-    # 4. Combine scores (hybrid)
+
+    ft_ok = user_embedding is not None
+    if ft_ok and tfidf_ok:
+        ft_w, tf_w = FASTTEXT_WEIGHT, TFIDF_WEIGHT
+    elif ft_ok and not tfidf_ok:
+        ft_w, tf_w = 1.0, 0.0
+    elif (not ft_ok) and tfidf_ok:
+        ft_w, tf_w = 0.0, 1.0
+    else:
+        ft_w, tf_w = 0.0, 0.0
+
     combined_scores = []
     for i in range(len(events)):
         ft_score = fasttext_scores[i] if i < len(fasttext_scores) else 0.0
         tf_score = tfidf_scores[i] if i < len(tfidf_scores) else 0.0
-        final = FASTTEXT_WEIGHT * ft_score + TFIDF_WEIGHT * tf_score
+        final = ft_w * ft_score + tf_w * tf_score
         combined_scores.append(final)
 
     # 5. Build results sorted by score
+    # Raw hybrid scores are often tightly clustered (e.g. 0.40-0.55). We keep
+    # those raw values for ranking/debugging and also provide a normalized
+    # percentage so the UI can show more intuitive "best match" values.
+    max_score = max(combined_scores) if combined_scores else 0.0
+    min_score = min(combined_scores) if combined_scores else 0.0
+    score_range = max_score - min_score
+
     results = []
     for i, event in enumerate(events):
+        raw_score = combined_scores[i]
+        if score_range > 1e-9:
+            normalized_percentage = ((raw_score - min_score) / score_range) * 100.0
+        elif max_score > 0:
+            normalized_percentage = 100.0
+        else:
+            normalized_percentage = 0.0
+
         results.append({
             "id": event.get("id"),
             "name": event.get("name"),
@@ -228,7 +262,8 @@ def recommend_events(req: RecommendRequest):
             "event_time": event.get("event_time"),
             "location": event.get("location"),
             "organizer_id": event.get("organizer_id"),
-            "match_score": round(combined_scores[i], 4),
+            "match_score": round(raw_score, 4),
+            "match_percentage": int(round(normalized_percentage)),
             "fasttext_score": round(fasttext_scores[i], 4),
             "tfidf_score": round(tfidf_scores[i], 4),
         })
@@ -239,8 +274,9 @@ def recommend_events(req: RecommendRequest):
     return {
         "recommendations": results,
         "user_profile_summary": user_text,
-        "model_used": "FastText + TF-IDF Hybrid",
-        "weights": {"fasttext": FASTTEXT_WEIGHT, "tfidf": TFIDF_WEIGHT},
+        "model_used": "FastText + TF-IDF Hybrid" if ft_model is not None else "TF-IDF Only",
+        "weights": {"fasttext": ft_w, "tfidf": tf_w},
+        "model_loaded": ft_model is not None,
     }
 
 
@@ -298,6 +334,7 @@ def health():
     return {
         "status": "ok",
         "model_loaded": ft_model is not None,
+        "model_path": MODEL_PATH,
     }
 
 
@@ -354,7 +391,7 @@ def get_notifications(user_id: str):
 
     # 3. Check application approvals & Event Reminders
     try:
-        app_resp = supabase.table("applications").select("*, events(*)").eq("user_id", user_id).execute()
+        app_resp = supabase.table("event_registrations").select("*, events(*)").eq("user_id", user_id).execute()
         apps = app_resp.data or []
         
         for app_record in apps:
@@ -397,6 +434,6 @@ def get_notifications(user_id: str):
         print(f"Error fetching applications: {e}")
 
     # Sort notifications to have unread first (simulated times)
-    notifications.sort(key=lambda x: not x["read"], reverse=True)
+    notifications.sort(key=lambda x: x["read"])
 
     return {"notifications": notifications}

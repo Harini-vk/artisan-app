@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bell, Calendar, BadgeCheck, Landmark, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { BACKEND_API_URL } from "@/lib/api";
 
 const typeIcons: Record<string, React.ReactNode> = {
   event: <Calendar className="h-5 w-5" />,
@@ -31,7 +32,7 @@ export default function NotificationsPage() {
       }
 
       try {
-        const response = await fetch(`http://127.0.0.1:8000/notifications/${user.id}`);
+        const response = await fetch(`${BACKEND_API_URL}/notifications/${user.id}`);
         if (!response.ok) {
           throw new Error("Failed to fetch notifications");
         }

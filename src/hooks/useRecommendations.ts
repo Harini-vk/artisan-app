@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import type { Event } from "@/data/mockData";
-
-const RECOMMENDATION_API = "http://localhost:8000";
+import { BACKEND_API_URL } from "@/lib/api";
 
 interface RecommendedEvent extends Event {
     match_score?: number;
+    match_percentage?: number;
 }
 
 interface RecommendationResult {
@@ -30,7 +30,7 @@ export function useRecommendations(): RecommendationResult {
             }
 
             try {
-                const response = await fetch(`${RECOMMENDATION_API}/recommend`, {
+                const response = await fetch(`${BACKEND_API_URL}/recommend`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ user_id: user.id }),
@@ -58,6 +58,7 @@ export function useRecommendations(): RecommendationResult {
                         organizer: rec.organizer_id || "",
                         eligibility: rec.industry_focus || "",
                         match_score: rec.match_score,
+                        match_percentage: rec.match_percentage,
                     })
                 );
 

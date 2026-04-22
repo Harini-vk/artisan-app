@@ -15,6 +15,8 @@ export interface Event {
   location: string;
   organizer: string;
   eligibility: string;
+  match_score?: number;
+  match_percentage?: number;
 }
 
 export interface Product {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, BadgeCheck, Banknote, Gift, CreditCard, Loader2 } from "lucide-react";
 import { Scheme } from "@/data/mockData";
+import { BACKEND_API_URL } from "@/lib/api";
 
 const typeIcons: Record<string, React.ReactNode> = {
   Loan: <Banknote className="h-5 w-5" />,
@@ -16,7 +17,7 @@ export default function SchemesPage() {
   useEffect(() => {
     const fetchSchemes = async () => {
       try {
-        const response = await fetch("http://127.0.0.1:8000/schemes");
+        const response = await fetch(`${BACKEND_API_URL}/schemes`);
         if (!response.ok) {
           throw new Error("Failed to fetch schemes");
         }
