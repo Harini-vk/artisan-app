@@ -2,14 +2,7 @@
 
 A platform designed for entrepreneurs, investors, and organizers to connect through events. This project features an AI-powered event recommendation system that uses a hybrid FastText + TF-IDF approach to match users with relevant events based on their profiles.
 
-## Prerequisites
-
-- [Node.js](https://nodejs.org/) (for the frontend)
-- [Python 3.8+](https://www.python.org/) (for the recommendation backend)
-- [Supabase](https://supabase.com/) account and project
-
 ---
-
 
 ## How the Recommendation System Works
 
@@ -24,3 +17,11 @@ For a detailed architectural breakdown, see the `backend/Working.txt` file.
 - **Frontend**: React, TypeScript, Tailwind CSS, Lucide React, Supabase-js
 - **Backend**: FastAPI, fasttext, scikit-learn, numpy, supabase-py
 - **Database**: Supabase (PostgreSQL)
+
+---
+
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) (for the frontend)
+- [Python 3.8+](https://www.python.org/) (for the recommendation backend)
+- [Supabase](https://supabase.com/) account and project
