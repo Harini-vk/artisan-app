@@ -10,51 +10,6 @@ A platform designed for entrepreneurs, investors, and organizers to connect thro
 
 ---
 
-## Getting Started
-
-### 1. Database Setup (Supabase)
-
-Before running the application, you need to seed the database with mock events.
-
-1.  Open your [Supabase Dashboard](https://supabase.com/dashboard).
-2.  Go to the **SQL Editor**.
-3.  Create a new query and paste the contents of `backend/seed_events.sql` (if available, or use your own event data).
-4.  Run the query to populate the `events` table.
-
-### 2. Backend Setup (Recommendation AI)
-
-The backend provides the AI recommendation engine using a custom-trained FastText model.
-
-1.  Navigate to the `backend` directory:
-    ```bash
-    cd backend
-    ```
-2.  Install the Python dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
-3.  Ensure your `events_embeddings.bin` model file is in the `backend` folder.
-4.  Start the FastAPI server:
-    ```bash
-    python -m uvicorn recommendation:app --host 0.0.0.0 --port 8000
-    ```
-    The backend will now be running at `http://localhost:8000`.
-
-### 3. Frontend Setup
-
-The frontend is a React application built with Vite.
-
-1.  In the root directory, install the dependencies:
-    ```bash
-    npm install
-    ```
-2.  Start the development server:
-    ```bash
-    npm run dev
-    ```
-    The frontend will be available at the URL shown in your terminal (usually `http://localhost:5173`).
-
----
 
 ## How the Recommendation System Works
 
